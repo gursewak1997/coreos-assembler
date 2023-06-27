@@ -33,6 +33,7 @@ import (
 	"github.com/pkg/errors"
 	"gopkg.in/yaml.v2"
 
+	// "../mantle/platform/machine/kubevirt"
 	"github.com/coreos/coreos-assembler/mantle/harness"
 	"github.com/coreos/coreos-assembler/mantle/harness/reporters"
 	"github.com/coreos/coreos-assembler/mantle/kola/cluster"
@@ -44,6 +45,7 @@ import (
 	doapi "github.com/coreos/coreos-assembler/mantle/platform/api/do"
 	esxapi "github.com/coreos/coreos-assembler/mantle/platform/api/esx"
 	gcloudapi "github.com/coreos/coreos-assembler/mantle/platform/api/gcloud"
+	kubevirtapi "github.com/coreos/coreos-assembler/mantle/platform/api/kubevirt"
 	openstackapi "github.com/coreos/coreos-assembler/mantle/platform/api/openstack"
 	packetapi "github.com/coreos/coreos-assembler/mantle/platform/api/packet"
 	"github.com/coreos/coreos-assembler/mantle/platform/conf"
@@ -107,6 +109,7 @@ var (
 	DOOptions        = doapi.Options{Options: &Options}        // glue to set platform options from main
 	ESXOptions       = esxapi.Options{Options: &Options}       // glue to set platform options from main
 	GCPOptions       = gcloudapi.Options{Options: &Options}    // glue to set platform options from main
+	KubevirtOptions  = kubevirtapi.Options{Options: &Options}  // glue to set platform options from main
 	OpenStackOptions = openstackapi.Options{Options: &Options} // glue to set platform options from main
 	PacketOptions    = packetapi.Options{Options: &Options}    // glue to set platform options from main
 	QEMUOptions      = unprivqemu.Options{Options: &Options}   // glue to set platform options from main
@@ -275,6 +278,8 @@ func NewFlight(pltfrm string) (flight platform.Flight, err error) {
 		flight, err = esx.NewFlight(&ESXOptions)
 	case "gcp":
 		flight, err = gcloud.NewFlight(&GCPOptions)
+	// case "kubevirt":
+	// 	flight, err = kubevirt.NewFlight(&KubevirtOptions)
 	case "openstack":
 		flight, err = openstack.NewFlight(&OpenStackOptions)
 	case "packet":
