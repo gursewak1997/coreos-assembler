@@ -656,7 +656,7 @@ type urlMaker struct {
 }
 
 // Init parses endpoint
-func (um *urlMaker) Init(endpoint string, isCname bool, isProxy bool) {
+func (um *urlMaker) Init(endpoint string, isCname bool, isProxy bool) error {
 	if strings.HasPrefix(endpoint, "http://") {
 		um.Scheme = "http"
 		um.NetLoc = endpoint[len("http://"):]
@@ -668,6 +668,14 @@ func (um *urlMaker) Init(endpoint string, isCname bool, isProxy bool) {
 		um.NetLoc = endpoint
 	}
 
+	//use url.Parse() to get real host
+	strUrl := um.Scheme + "://" + um.NetLoc
+	url, err := url.Parse(strUrl)
+	if err != nil {
+		return err
+	}
+
+	um.NetLoc = url.Host
 	host, _, err := net.SplitHostPort(um.NetLoc)
 	if err != nil {
 		host = um.NetLoc
@@ -685,6 +693,8 @@ func (um *urlMaker) Init(endpoint string, isCname bool, isProxy bool) {
 		um.Type = urlTypeAliyun
 	}
 	um.IsProxy = isProxy
+
+	return nil
 }
 
 // getURL gets URL

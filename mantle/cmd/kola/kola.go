@@ -323,6 +323,10 @@ func writeProps() error {
 		Image       string `json:"image"`
 		MachineType string `json:"type"`
 	}
+	type Kubevirt struct {
+		ConfigPath string `json:"image"`
+		Conatiner string `json:"container"`
+	}
 	type OpenStack struct {
 		Region string `json:"region"`
 		Image  string `json:"image"`
@@ -352,6 +356,7 @@ func writeProps() error {
 		DO          DO        `json:"do"`
 		ESX         ESX       `json:"esx"`
 		GCP         GCP       `json:"gcp"`
+		KubeVirt    Kubevirt  `json:"kubevirt"`
 		OpenStack   OpenStack `json:"openstack"`
 		Packet      Packet    `json:"packet"`
 		QEMU        QEMU      `json:"qemu"`
@@ -386,6 +391,10 @@ func writeProps() error {
 		GCP: GCP{
 			Image:       kola.GCPOptions.Image,
 			MachineType: kola.GCPOptions.MachineType,
+		},
+		KubeVirt: Kubevirt{
+			ConfigPath: kola.KubevirtOptions.ConfigPath,
+			Conatiner: kola.KubevirtOptions.Container,
 		},
 		OpenStack: OpenStack{
 			Region: kola.OpenStackOptions.Region,
@@ -617,7 +626,7 @@ func syncFindParentImageOptions() error {
 	// Here we handle the --fetch-parent-image --> platform-specific options
 	// based on its cosa build metadata
 	switch kolaPlatform {
-	case "qemu":
+	case "qemu-unpriv":
 		if qemuImageDir == "" {
 			if qemuImageDir, err = os.MkdirTemp("/var/tmp", "kola-run-upgrade"); err != nil {
 				return err
