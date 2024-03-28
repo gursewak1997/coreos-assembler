@@ -44,6 +44,7 @@ import (
 	doapi "github.com/coreos/coreos-assembler/mantle/platform/api/do"
 	esxapi "github.com/coreos/coreos-assembler/mantle/platform/api/esx"
 	gcloudapi "github.com/coreos/coreos-assembler/mantle/platform/api/gcloud"
+	kubevirtapi "github.com/coreos/coreos-assembler/mantle/platform/api/kubevirt"
 	openstackapi "github.com/coreos/coreos-assembler/mantle/platform/api/openstack"
 	packetapi "github.com/coreos/coreos-assembler/mantle/platform/api/packet"
 	"github.com/coreos/coreos-assembler/mantle/platform/conf"
@@ -52,6 +53,7 @@ import (
 	"github.com/coreos/coreos-assembler/mantle/platform/machine/do"
 	"github.com/coreos/coreos-assembler/mantle/platform/machine/esx"
 	"github.com/coreos/coreos-assembler/mantle/platform/machine/gcloud"
+	"github.com/coreos/coreos-assembler/mantle/platform/machine/kubevirt"
 	"github.com/coreos/coreos-assembler/mantle/platform/machine/openstack"
 	"github.com/coreos/coreos-assembler/mantle/platform/machine/packet"
 	"github.com/coreos/coreos-assembler/mantle/platform/machine/qemu"
@@ -111,6 +113,7 @@ var (
 	DOOptions        = doapi.Options{Options: &Options}        // glue to set platform options from main
 	ESXOptions       = esxapi.Options{Options: &Options}       // glue to set platform options from main
 	GCPOptions       = gcloudapi.Options{Options: &Options}    // glue to set platform options from main
+	KubeVirtOptions  = kubevirtapi.Options{Options: &Options}  // glue to set platform options from main
 	OpenStackOptions = openstackapi.Options{Options: &Options} // glue to set platform options from main
 	PacketOptions    = packetapi.Options{Options: &Options}    // glue to set platform options from main
 	QEMUOptions      = qemu.Options{Options: &Options}         // glue to set platform options from main
@@ -297,6 +300,8 @@ func NewFlight(pltfrm string) (flight platform.Flight, err error) {
 		flight, err = esx.NewFlight(&ESXOptions)
 	case "gcp":
 		flight, err = gcloud.NewFlight(&GCPOptions)
+	case "kubevirt":
+		flight, err = kubevirt.NewFlight(&KubeVirtOptions)
 	case "openstack":
 		flight, err = openstack.NewFlight(&OpenStackOptions)
 	case "packet":

@@ -40,7 +40,7 @@ var (
 	kolaPlatform      string
 	kolaParallelArg   string
 	kolaArchitectures = []string{"amd64"}
-	kolaPlatforms     = []string{"aws", "azure", "do", "esx", "gcp", "openstack", "packet", "qemu", "qemu-iso"}
+	kolaPlatforms     = []string{"aws", "azure", "do", "esx", "gcp", "kubevirt", "openstack", "packet", "qemu", "qemu-iso"}
 	kolaDistros       = []string{"fcos", "rhcos", "scos"}
 )
 
@@ -126,6 +126,10 @@ func init() {
 	bv(&kola.GCPOptions.ServiceAuth, "gcp-service-auth", false, "for non-interactive auth when running within GCP")
 	sv(&kola.GCPOptions.JSONKeyFile, "gcp-json-key", "", "use a service account's JSON key for authentication (default \"~/"+auth.GCPConfigPath+"\")")
 	bv(&kola.GCPOptions.Confidential, "gcp-confidential-vm", false, "create confidential instances")
+
+	// kubevirt-specific options
+	sv(&kola.KubeVirtOptions.ConfigPath, "kubevirt-config-file", "", "Path to a kubevirt config file")
+	sv(&kola.KubeVirtOptions.Image, "container", "", "Kubevirt image ref")
 
 	// openstack-specific options
 	sv(&kola.OpenStackOptions.ConfigPath, "openstack-config-file", "", "Path to a clouds.yaml formatted OpenStack config file. The underlying library defaults to ./clouds.yaml")
