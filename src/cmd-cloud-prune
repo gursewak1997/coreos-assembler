@@ -11,6 +11,7 @@
 #     images: 2 years
 #     images-keep: [qemu, live-iso]
 #     build: 3 years
+#     containers: 2 weeks
 
 import argparse
 import json
@@ -49,11 +50,6 @@ def main():
     args = parse_args()
     bucket, prefix = args.url.split("/", 1)
     stream = args.stream
-    # Boto3 loads credentials from ~/.aws/config by default and we can change
-    # this default location by setting the AWS_CONFIG_FILE environment variable.
-    # The alternative is to manually pass ACCESS_KEY and SECRET_KEY which isn't favourable.
-    if args.aws_config_file:
-        os.environ["AWS_CONFIG_FILE"] = args.aws_config_file
 
     gcp_cloud_config = {
         "gcp": {
@@ -74,97 +70,125 @@ def main():
     if stream not in policy:
         print(f"No pruning policy specified for {stream} stream in policy.yaml")
         return
+
+    # Base URL for Fedora CoreOS builds
+    json_base_url = "/builds/builds.json"
+
+    if (args.http):
+        s3_client = None
     else:
+        # Boto3 loads credentials from ~/.aws/config by default and we can change
+        # this default location by setting the AWS_CONFIG_FILE environment variable.
+        # The alternative is to manually pass ACCESS_KEY and SECRET_KEY which isn't favourable.
+        if args.aws_config_file:
+            os.environ["AWS_CONFIG_FILE"] = args.aws_config_file
         s3_client = boto3.client("s3")
-        # If the build key is set in the policy file, then the cloud-uploads key must
-        # also be present, and the duration of cloud-uploads must be equal or shorter
-        if "build" in policy[stream].keys():
-            cloud_uploads_check(policy[stream])
 
-        # Base URL for Fedora CoreOS builds
-
-        buildJsonData = get_json_from_s3(bucket, prefix + "/builds/builds.json")
-        if buildJsonData is None:
-            print(f"No builds.json found for {stream} in {bucket} bucket")
-            return
-
-        # action is basically whatever is needed to be pruned for the respective stream
-        for action in policy[stream]:
-            duration = policy[stream][action]
-            duration_in_months = get_months(duration)
-            refDate = datetime.datetime.now() - relativedelta(months=int(duration_in_months))
-
-            print(f"Pruning {duration} old {action} for {stream} builds")
-            # Enumerating in reverse to go from the oldest build to the newest one
-            for index, build in enumerate(reversed(buildJsonData["builds"])):
-                build_id = build["id"]
-                if "policy-cleanup" in build.keys():
-                    # If we have already pruned the spedified resources for this
-                    # build as per builds.json, we skip through it.
-                    if action in build["policy-cleanup"]:
-                        print(f"The {build_id} has already had {action} pruning completed")
-                        continue
-                timestamp = build_id.split('.')[1]
-                buildDate = datetime.datetime(int(timestamp[0:4]), int(timestamp[4:6]), int(timestamp[-2:]))
-                if buildDate < refDate:
-                    for arch in build["arches"]:
-                        meta_url = f"/builds/{build_id}/{arch}/meta.json"
-                        meta_json = get_json_from_s3(bucket, prefix + meta_url)
-                        if meta_json is None:
-                            print(f"Failed to get meta.json for {build_id} for {arch}")
-                            return
-                        images = {
-                            "amis": meta_json.get("amis") or [],
-                            "gcp": meta_json.get("gcp") or [],
-                        }
-                        currentBuild = Build(
-                            id=build_id,
-                            timestamp=timestamp,
-                            images=images,
-                            arch=arch,
-                        )
-                        match action:
-                            case "cloud-uploads":
-                                # Prunes only AWS and GCP at the moment
-                                delete_cloud_resources(currentBuild, gcp_cloud_config, args.dry_run)
-                                if not args.dry_run:
-                                    build.setdefault("policy-cleanup", []).append(action)
-                                    buildJsonData["builds"][index] = build
-                            # Not implemented yet
-                            case "build":
-                                print(f"Deleting key {prefix}{build.id} from bucket {bucket}")
-                                # Delete the build's directory in S3
-                                # S3().delete_object(args.bucket, f"{args.prefix}{str(currentBuild.id)}")
-                else:
-                    break
-        if not args.dry_run:
-            with open("builds/builds.json", "w") as json_file:
-                json_file.write(json.dumps(buildJsonData))
-            # This copies the local builds.json and updates the S3 bucket version.
-            s3_copy(s3_client, BUILDFILES['list'], bucket, f'{prefix}/builds/builds.json',
-                    CACHE_MAX_AGE_METADATA, args.acl, extra_args={},
-                    dry_run=args.dry_run)
+    buildJsonData = get_json(bucket, prefix + stream + json_base_url, s3_client)
+    if buildJsonData is None:
+        print(f"No builds.json found for {stream} in {bucket} bucket")
+        return
 
 
-def get_json_from_s3(bucket, key):
-    # Create an S3 client
-    s3 = boto3.client("s3")
+    # If the build key is set in the policy file, then the cloud-uploads key must
+    # also be present, and the duration of cloud-uploads must be equal or shorter
+    if "build" in policy[stream].keys():
+        cloud_uploads_check(policy[stream])
 
-    try:
-        # Fetch the JSON file from S3
-        response = s3.get_object(Bucket=bucket, Key=key)
+    # action is basically whatever is needed to be pruned for the respective stream
+    for action in policy[stream]:
+        duration = policy[stream][action]
+        duration_in_days = get_period_in_days(duration)
+        refDate = datetime.datetime.now() - relativedelta(days=int(duration_in_days))
 
-        # Read the content of the file
-        content = response["Body"].read().decode("utf-8")
+        print(f"Pruning {duration} old {action} for {stream} builds")
+        # Enumerating in reverse to go from the oldest build to the newest one
+        for index, build in enumerate(reversed(buildJsonData["builds"])):
+            build_id = build["id"]
+            if "policy-cleanup" in build.keys():
+                # If we have already pruned the spedified resources for this
+                # build as per builds.json, we skip through it.
+                if action in build["policy-cleanup"]:
+                    print(f"The {build_id} has already had {action} pruning completed")
+                    continue
+            timestamp = build_id.split('.')[1]
+            buildDate = datetime.datetime(int(timestamp[0:4]), int(timestamp[4:6]), int(timestamp[-2:]))
+            if buildDate < refDate:
+                for arch in build["arches"]:
+                    meta_url = f"{stream}/builds/{build_id}/{arch}/meta.json"
+                    meta_json = get_json(bucket, prefix + meta_url, s3_client)
+                    if meta_json is None:
+                        print(f"Failed to get meta.json for {build_id} for {arch}")
+                        return
+                    images = {
+                        "amis": meta_json.get("amis") or [],
+                        "gcp": meta_json.get("gcp") or [],
+                    }
+                    currentBuild = Build(
+                        id=build_id,
+                        timestamp=timestamp,
+                        images=images,
+                        arch=arch,
+                    )
+                    match action:
+                        case "cloud-uploads":
+                            # Prunes only AWS and GCP at the moment
+                            delete_cloud_resources(currentBuild, gcp_cloud_config, args.dry_run)
+                            if not args.dry_run:
+                                build.setdefault("policy-cleanup", []).append(action)
+                                buildJsonData["builds"][index] = build
+                        # Not implemented yet
+                        case "build":
+                            print(f"Deleting key {prefix}{build.id} from bucket {bucket}")
+                            # Delete the build's directory in S3
+                            # S3().delete_object(args.bucket, f"{args.prefix}{str(currentBuild.id)}")
+                        case "containers":
+                            # Prune container images
+                            print(f"Deleting container tag {currentBuild.id} from quay.io/fedora/fedora-coreos")
+                            print(f"skopeo --authfile /path/to/file delete quay.io/fedora/fedora-coreos:{currentBuild.id}")
+                            # TODO
+                            # argument for registry URL
+                            # Rework s3 subcommand
+                            # skopeo auth file argument or env
+            else:
+                break
+    if not args.dry_run:
+        with open("builds/builds.json", "w") as json_file:
+            json_file.write(json.dumps(buildJsonData))
+        # This copies the local builds.json and updates the S3 bucket version.
+        s3_copy(s3_client, BUILDFILES['list'], bucket, f'{prefix}/builds/builds.json',
+                CACHE_MAX_AGE_METADATA, args.acl, extra_args={},
+                dry_run=args.dry_run)
 
-        # Parse the JSON content
-        json_content = json.loads(content)
 
-        return json_content
+# If an s3 client is initalized, will pull from s3
+# otherwise, use HTTPS
+def get_json(bucket, key, client=None):
 
-    except Exception as e:
-        print(f"Error fetching the JSON file from S3 {bucket}/{key}: {e}")
-        return None
+    if client is None:
+        url = f"https://{bucket}/{key}"
+        try:
+            resp = requests.get(url=url)
+            data = resp.json()
+            return data
+
+        except Exception as e:
+            print(f"Error fetching the JSON file from {url}: {e}")
+            return None
+    else:
+        try:
+            # Fetch the JSON file from S3
+            response = client.get_object(Bucket=bucket, Key=key)
+            # Read the content of the file
+            content = response["Body"].read().decode("utf-8")
+
+            # Parse the JSON content
+            json_content = json.loads(content)
+            return json_content
+
+        except Exception as e:
+            print(f"Error fetching the JSON file from S3 {bucket}/{key}: {e}")
+            return None
 
 
 def parse_args():
@@ -185,11 +209,13 @@ def parse_args():
 
     s3 = subparsers.add_parser('s3', help='Prune s3 buckets')
     s3.add_argument("url", metavar='<BUCKET>[/PREFIX]',
-                    help="Bucket and path prefix in which to upload")
+                    help="Bucket and path prefix in which to upload", default="builds.coreos.fedoraproject.org/prod/streams")
     s3.add_argument("--acl", help="ACL for objects",
                     action='store', default='private')
     s3.add_argument("--aws-config-file", default=os.environ.get("AWS_CONFIG_FILE"),
                     help="Path to AWS config file")
+    s3.add_argument("--http", default='false', help="Use http to retrieve the builds.json file")
+
     return parser.parse_args()
 
 
@@ -245,23 +271,27 @@ def delete_cloud_resources(build, gcp_cloud_config, dry_run):
 
 def cloud_uploads_check(actions):
     if "cloud-uploads" in actions.keys():
-        cloud_uploads_duration = get_months(actions["cloud-uploads"])
-        build_duration = get_months(actions["build"])
+        cloud_uploads_duration = get_period_in_days(actions["cloud-uploads"])
+        build_duration = get_period_in_days(actions["build"])
         assert cloud_uploads_duration < build_duration
     else:
         print("cloud-uploads must be set or be less than builds pruning duration in policy.yaml")
 
 
-def get_months(duration):
+def get_period_in_days(duration):
     val, unit = duration.split(" ")
-    if unit in ["years" or "year"]:
-        months = int(val) * 12
-    elif unit in ["months" or "month"]:
-        months = int(val)
+    if unit in ["years" or "year" or "y"]:
+        days = int(val) * 365
+    elif unit in ["months" or "month" or "m"]:
+        days = int(val) * 30
+    elif unit in ["weeks" or "week" or "w"]:
+        days = int(val) *7
+    elif unit in ["days" or "day" or "d"]:
+        days = int(val)
     else:
-        print("Duration of pruning for resources is only supported in years or months")
+        print("Duration of pruning for resources is only supported in years, months, weeks or days")
         raise Exception
-    return months
+    return days
 
 
 @retry(
